@@ -1,0 +1,27 @@
+# Dumu Apparels - FastAPI Instagram Bot
+# Python 3.11+ Required
+
+# FastAPI Framework
+fastapi==0.115.6
+
+# ASGI Server
+uvicorn[standard]==0.32.1
+
+# Database (PostgreSQL with Async Support)
+sqlalchemy==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+
+# OpenAI API Client
+openai==1.54.5
+
+# Environment Variables
+python-dotenv==1.0.1
+pydantic-settings==2.6.1
+
+# HTTP Client
+requests==2.32.3
+
+# Pydantic (required by FastAPI and pydantic-settings)
+pydantic==2.10.3
+
