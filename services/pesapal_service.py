@@ -237,6 +237,16 @@ async def create_pesapal_order(
             
             if response.status_code == 200:
                 data = response.json()
+                # PesaPal may return errors in response body even with 200 status
+                if "error" in data:
+                    error_info = data.get("error", {})
+                    error_code = error_info.get("code", "unknown")
+                    error_message = error_info.get("message", "")
+                    logger.error(
+                        f"PesaPal order creation failed (HTTP 200 but error in response). "
+                        f"Code: {error_code}, Message: {error_message}, Response: {data}"
+                    )
+                    return None
                 logger.info(f"PesaPal order created successfully: {order_id}")
                 return data
             else:
