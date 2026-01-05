@@ -80,6 +80,18 @@ async def get_pesapal_access_token() -> Optional[str]:
     """
     settings = get_settings()
     
+    # Validate credentials are set
+    if not settings.pesapal_consumer_key or not settings.pesapal_consumer_secret:
+        logger.error(
+            "PesaPal credentials not configured. Please set PESAPAL_CONSUMER_KEY and "
+            "PESAPAL_CONSUMER_SECRET environment variables."
+        )
+        return None
+    
+    # Log first few characters for debugging (without exposing full credentials)
+    key_prefix = settings.pesapal_consumer_key[:8] + "..." if len(settings.pesapal_consumer_key) > 8 else "***"
+    logger.debug(f"Attempting PesaPal authentication with consumer_key: {key_prefix}")
+    
     # PesaPal API v3 endpoints - Production
     url = "https://pay.pesapal.com/v3/api/Auth/RequestToken"
     
@@ -105,13 +117,41 @@ async def get_pesapal_access_token() -> Optional[str]:
                     logger.info("PesaPal access token retrieved successfully")
                     return token
                 else:
-                    logger.error(f"PesaPal token response missing token field: {data}")
+                    # Check if response contains error information
+                    error_info = data.get("error", {})
+                    error_code = error_info.get("code", "unknown")
+                    error_message = error_info.get("message", "")
+                    
+                    if error_code == "invalid_consumer_key_or_secret_provided":
+                        logger.error(
+                            "PesaPal authentication failed: Invalid consumer key or secret. "
+                            "Please verify your PESAPAL_CONSUMER_KEY and PESAPAL_CONSUMER_SECRET "
+                            "in Railway environment variables match your PesaPal Merchant Dashboard credentials."
+                        )
+                    else:
+                        logger.error(f"PesaPal token response missing token field: {data}")
                     return None
             else:
-                logger.error(
-                    f"Failed to get PesaPal access token. "
-                    f"Status: {response.status_code}, Response: {response.text}"
-                )
+                try:
+                    error_data = response.json()
+                    error_info = error_data.get("error", {})
+                    error_code = error_info.get("code", "unknown")
+                    
+                    if error_code == "invalid_consumer_key_or_secret_provided":
+                        logger.error(
+                            f"PesaPal authentication failed (HTTP {response.status_code}): "
+                            f"Invalid consumer key or secret. Please verify your credentials in Railway."
+                        )
+                    else:
+                        logger.error(
+                            f"Failed to get PesaPal access token. "
+                            f"Status: {response.status_code}, Response: {response.text}"
+                        )
+                except Exception:
+                    logger.error(
+                        f"Failed to get PesaPal access token. "
+                        f"Status: {response.status_code}, Response: {response.text}"
+                    )
                 return None
                 
     except Exception as e:
