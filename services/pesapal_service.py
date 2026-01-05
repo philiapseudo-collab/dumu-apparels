@@ -270,7 +270,17 @@ async def get_pesapal_payment_link(
     Returns:
         str: Payment URL if successful, None otherwise
     """
+    settings = get_settings()
     description = f"Payment for {product_name}" if product_name else "Purchase from Dumu Apparels"
+    
+    # PesaPal requires a callback URL. For Instagram bots, this is where users are redirected after payment.
+    # Use BASE_URL if available, otherwise use a placeholder (PesaPal requires a valid URL format)
+    if settings.base_url:
+        callback_url = f"{settings.base_url.rstrip('/')}/payment/callback"
+    else:
+        # Use a placeholder URL - PesaPal requires a valid URL format
+        # In production, BASE_URL should be set to your actual domain
+        callback_url = "https://dumuapparels.com/payment/callback"
     
     result = await create_pesapal_order(
         amount=amount,
@@ -278,7 +288,8 @@ async def get_pesapal_payment_link(
         customer_email=customer_email,
         customer_name=customer_name,
         phone_number=phone_number,
-        description=description
+        description=description,
+        callback_url=callback_url
     )
     
     if result:
