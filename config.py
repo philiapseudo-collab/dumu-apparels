@@ -71,9 +71,9 @@ class Settings(BaseSettings):
         # If it's SQLite or already has the correct protocol, return as-is
         return v
     
-    # Payment Providers - IntaSend (Primary)
-    intasend_public_key: str
-    intasend_secret_key: str
+    # Payment Providers - IntaSend (Primary) - Optional for now, will be added in future version
+    intasend_public_key: Optional[str] = None
+    intasend_secret_key: Optional[str] = None
     
     # Payment Providers - PesaPal (Secondary/Fallback)
     pesapal_consumer_key: str
