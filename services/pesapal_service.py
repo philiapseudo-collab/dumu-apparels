@@ -217,7 +217,6 @@ async def create_pesapal_order(
         "description": description,
         "callback_url": callback_url or "",
         "redirect_mode": "",
-        "notification_id": notification_id or "",
         "branch": "",
         "billing_address": {
             "email_address": customer_email,
@@ -227,6 +226,10 @@ async def create_pesapal_order(
             "last_name": customer_data["last_name"]
         }
     }
+    
+    # Only include notification_id if it's provided (PesaPal rejects empty strings)
+    if notification_id:
+        payload["notification_id"] = notification_id
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
