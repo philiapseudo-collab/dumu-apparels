@@ -6,7 +6,9 @@ All configuration values are validated at startup.
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator, Field
 from typing import Optional
+import os
 
 
 class Settings(BaseSettings):
@@ -33,7 +35,41 @@ class Settings(BaseSettings):
     openai_api_key: str
     
     # Database Configuration
-    database_url: str
+    # Reads from DATABASE_URL env var, defaults to SQLite for local dev
+    # Protocol is automatically fixed: postgres:// or postgresql:// → postgresql+asyncpg://
+    database_url: str = Field(
+        default_factory=lambda: os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./dumu.db")
+    )
+    
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def fix_database_url_protocol(cls, v: str) -> str:
+        """
+        Fix database URL protocol for SQLAlchemy async.
+        
+        Railway and many cloud providers provide URLs starting with:
+        - postgres:// → needs to be postgresql+asyncpg://
+        - postgresql:// → needs to be postgresql+asyncpg://
+        
+        Args:
+            v: Database URL string
+            
+        Returns:
+            str: Database URL with correct protocol for asyncpg
+        """
+        if not v:
+            return v
+        
+        # If URL starts with postgres:// (without the +asyncpg part), fix it
+        if v.startswith("postgres://"):
+            return v.replace("postgres://", "postgresql+asyncpg://", 1)
+        
+        # If URL starts with postgresql:// (but not postgresql+asyncpg://), fix it
+        if v.startswith("postgresql://") and not v.startswith("postgresql+asyncpg://"):
+            return v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        
+        # If it's SQLite or already has the correct protocol, return as-is
+        return v
     
     # Payment Providers - IntaSend (Primary)
     intasend_public_key: str
@@ -53,6 +89,9 @@ class Settings(BaseSettings):
     
     # Currency (Kenyan Shillings)
     currency: str = "KES"
+    
+    # Base URL for IPN callbacks (optional - defaults to empty, set in PesaPal dashboard)
+    base_url: Optional[str] = None
 
 
 # Global settings instance
