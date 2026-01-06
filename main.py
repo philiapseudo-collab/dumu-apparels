@@ -347,32 +347,85 @@ async def payment_callback(
     OrderMerchantReference: str = Query(None, alias="OrderMerchantReference")
 ):
     """
-    Payment callback endpoint - redirects users back to Instagram after payment.
+    Payment callback endpoint - redirects users back to Instagram DM conversation.
     
     PesaPal redirects users here after payment completion. We redirect them
-    back to Instagram's direct inbox.
+    back to their Instagram Direct Message conversation with the bot.
     
     Args:
         OrderTrackingId: PesaPal order tracking ID (optional)
         OrderMerchantReference: Merchant reference (optional)
         
     Returns:
-        RedirectResponse: Redirects to Instagram
+        HTMLResponse: HTML page that redirects to Instagram app or web
     """
-    from fastapi.responses import RedirectResponse
-    
     logger.info(
         f"Payment callback received - OrderTrackingId: {OrderTrackingId}, "
         f"OrderMerchantReference: {OrderMerchantReference}"
     )
     
-    # Redirect to Instagram's direct inbox
-    # This will open Instagram app if installed, or open Instagram web in browser
-    instagram_url = "https://www.instagram.com/direct/inbox/"
+    # HTML page that attempts to open Instagram app, then falls back to web
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Redirecting to Instagram...</title>
+        <style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                margin: 0;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+            }
+            .container {
+                text-align: center;
+                padding: 2rem;
+            }
+            .spinner {
+                border: 4px solid rgba(255, 255, 255, 0.3);
+                border-top: 4px solid white;
+                border-radius: 50%;
+                width: 40px;
+                height: 40px;
+                animation: spin 1s linear infinite;
+                margin: 0 auto 1rem;
+            }
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="spinner"></div>
+            <h2>Payment Complete! ✅</h2>
+            <p>Redirecting you back to Instagram...</p>
+        </div>
+        <script>
+            // Try to open Instagram app first (mobile)
+            const instagramAppUrl = 'instagram://direct';
+            const instagramWebUrl = 'https://www.instagram.com/direct/inbox/';
+            
+            // Attempt to open Instagram app
+            window.location.href = instagramAppUrl;
+            
+            // Fallback to web if app doesn't open (after 2 seconds)
+            setTimeout(function() {
+                window.location.href = instagramWebUrl;
+            }, 2000);
+        </script>
+    </body>
+    </html>
+    """
     
-    # For mobile apps, use deep link (will open Instagram app if installed)
-    # The web URL will work for both web and mobile browsers
-    return RedirectResponse(url=instagram_url, status_code=302)
+    return HTMLResponse(content=html_content, status_code=200)
 
 
 if __name__ == "__main__":
