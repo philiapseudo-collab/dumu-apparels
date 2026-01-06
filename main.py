@@ -296,9 +296,7 @@ async def pesapal_ipn_register(ipn_url: str = Body(..., embed=True)):
 
 @app.get("/pesapal/ipn")
 async def pesapal_ipn(
-    pesapal_notification_type: str = Query(...),
-    pesapal_transaction_tracking_id: str = Query(...),
-    pesapal_merchant_reference: str = Query(...),
+    request: Request,
     background_tasks: BackgroundTasks = BackgroundTasks()
 ):
     """
@@ -308,33 +306,53 @@ async def pesapal_ipn(
     We must echo back the parameters to acknowledge receipt, then process
     the payment status update in the background.
     
+    PesaPal API v3 sends parameters with different names:
+    - OrderNotificationType (instead of pesapal_notification_type)
+    - OrderTrackingId (instead of pesapal_transaction_tracking_id)
+    - OrderMerchantReference (instead of pesapal_merchant_reference)
+    
     Args:
-        pesapal_notification_type: Notification type (typically "CHANGE")
-        pesapal_transaction_tracking_id: PesaPal transaction tracking ID
-        pesapal_merchant_reference: Merchant reference (ORDER_{order_id})
+        request: FastAPI Request object to extract query parameters
         background_tasks: FastAPI BackgroundTasks for async processing
         
     Returns:
         PlainTextResponse: Echoed parameters as required by PesaPal
     """
+    # Extract parameters - PesaPal API v3 uses different parameter names
+    notification_type = request.query_params.get("OrderNotificationType") or request.query_params.get("pesapal_notification_type")
+    tracking_id = request.query_params.get("OrderTrackingId") or request.query_params.get("pesapal_transaction_tracking_id")
+    merchant_reference = request.query_params.get("OrderMerchantReference") or request.query_params.get("pesapal_merchant_reference")
+    
+    # Validate required parameters
+    if not notification_type or not tracking_id or not merchant_reference:
+        logger.error(
+            f"PesaPal IPN missing required parameters. "
+            f"Received: {dict(request.query_params)}"
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="Missing required parameters: OrderNotificationType, OrderTrackingId, OrderMerchantReference"
+        )
+    
     logger.info(
-        f"PesaPal IPN received: type={pesapal_notification_type}, "
-        f"tracking_id={pesapal_transaction_tracking_id}, "
-        f"reference={pesapal_merchant_reference}"
+        f"PesaPal IPN received: type={notification_type}, "
+        f"tracking_id={tracking_id}, "
+        f"reference={merchant_reference}"
     )
     
     # Echo back the parameters as required by PesaPal
+    # Use the original parameter names that PesaPal sent
     response_text = (
-        f"pesapal_notification_type={pesapal_notification_type}&"
-        f"pesapal_transaction_tracking_id={pesapal_transaction_tracking_id}&"
-        f"pesapal_merchant_reference={pesapal_merchant_reference}"
+        f"OrderNotificationType={notification_type}&"
+        f"OrderTrackingId={tracking_id}&"
+        f"OrderMerchantReference={merchant_reference}"
     )
     
     # Process the IPN in the background (after responding to PesaPal)
     background_tasks.add_task(
         process_pesapal_ipn,
-        pesapal_transaction_tracking_id,
-        pesapal_merchant_reference
+        tracking_id,
+        merchant_reference
     )
     
     # Return immediately with echoed parameters (required by PesaPal)
