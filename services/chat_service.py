@@ -82,6 +82,92 @@ async def send_message(recipient_id: str, text: str) -> bool:
         return False
 
 
+async def send_payment_link_button(recipient_id: str, payment_link: str, amount: float, product_name: str) -> bool:
+    """
+    Send a payment link as a button template (no logo/preview).
+    
+    Args:
+        recipient_id: Instagram user ID to send message to
+        payment_link: Payment URL
+        amount: Payment amount
+        product_name: Product name
+        
+    Returns:
+        bool: True if message sent successfully, False otherwise
+    """
+    settings = get_settings()
+    url = "https://graph.facebook.com/v18.0/me/messages"
+    
+    # Strip any whitespace from token
+    access_token = settings.page_access_token.strip()
+    
+    if not access_token:
+        logger.error("PAGE_ACCESS_TOKEN is empty or not set")
+        return False
+    
+    params = {
+        "access_token": access_token
+    }
+    
+    text = (
+        f"Perfect! 💳\n\n"
+        f"Complete your payment of KES {amount:,.2f} for {product_name}.\n\n"
+        f"Click the button below to pay securely via Card (Visa/Mastercard)."
+    )
+    
+    payload = {
+        "recipient": {"id": recipient_id},
+        "message": {
+            "attachment": {
+                "type": "template",
+                "payload": {
+                    "template_type": "button",
+                    "text": text,
+                    "buttons": [
+                        {
+                            "type": "web_url",
+                            "url": payment_link,
+                            "title": "Pay Now 💳"
+                        }
+                    ]
+                }
+            }
+        }
+    }
+    
+    headers = {
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(url, params=params, json=payload, headers=headers)
+            
+            if response.status_code == 200:
+                logger.info(f"Payment link button sent successfully to {recipient_id}")
+                return True
+            else:
+                # Try to parse error response
+                try:
+                    error_data = response.json()
+                    error_msg = error_data.get("error", {}).get("message", "Unknown error")
+                    error_code = error_data.get("error", {}).get("code", "Unknown")
+                    logger.error(
+                        f"Failed to send payment link button to {recipient_id}. "
+                        f"Status: {response.status_code}, Code: {error_code}, Message: {error_msg}"
+                    )
+                except:
+                    logger.error(
+                        f"Failed to send payment link button to {recipient_id}. "
+                        f"Status: {response.status_code}, Response: {response.text}"
+                    )
+                return False
+                
+    except Exception as e:
+        logger.error(f"Error sending payment link button to {recipient_id}: {e}", exc_info=True)
+        return False
+
+
 async def get_product_carousel(category: str, db: AsyncSession) -> list:
     """
     Query products by category and format them for Instagram Generic Template carousel.
@@ -703,23 +789,27 @@ async def process_webhook_event(payload: dict) -> None:
                                     # PesaPal returns order_tracking_id which we can store
                                     # For now, we'll update it when we receive the IPN callback
                                     
-                                    # Send payment link to user
+                                    # Send payment link as button (no logo/preview)
                                     response_text = (
                                         f"Perfect! 💳\n\n"
-                                        f"Complete your payment of KES {float(product.price):,.2f} for {product.name}:\n\n"
-                                        f"{payment_link}\n\n"
-                                        f"Click the link above to pay securely via Card (Visa/Mastercard)."
+                                        f"Complete your payment of KES {float(product.price):,.2f} for {product.name}.\n\n"
+                                        f"Click the button below to pay securely via Card (Visa/Mastercard)."
                                     )
                                     
                                     response_log = ConversationLog(
                                         user_id=user.id,
-                                        message=response_text,
+                                        message=f"{response_text}\n\nPayment Link: {payment_link}",
                                         sender="bot"
                                     )
                                     db.add(response_log)
                                     await db.commit()
                                     
-                                    success = await send_message(sender_id, response_text)
+                                    success = await send_payment_link_button(
+                                        sender_id, 
+                                        payment_link, 
+                                        float(product.price), 
+                                        product.name
+                                    )
                                     if success:
                                         logger.info(f"PesaPal payment link sent to user {sender_id}, order {order.id}")
                                     else:
