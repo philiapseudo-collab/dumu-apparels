@@ -341,6 +341,55 @@ async def pesapal_ipn(
     return PlainTextResponse(content=response_text, status_code=200)
 
 
+@app.post("/payment/check-status")
+async def check_payment_status(
+    order_tracking_id: str = Body(..., embed=True),
+    merchant_reference: str = Body(..., embed=True)
+):
+    """
+    Manually check payment status and process confirmation if needed.
+    
+    This is a fallback endpoint in case IPN doesn't work.
+    Can be called to manually verify payment and send confirmation.
+    
+    Args:
+        order_tracking_id: PesaPal order tracking ID
+        merchant_reference: Merchant reference (ORDER_{order_id})
+        
+    Returns:
+        JSONResponse: Status check result
+    """
+    from services.pesapal_ipn import process_pesapal_ipn
+    
+    logger.info(
+        f"Manual payment status check requested - tracking_id: {order_tracking_id}, "
+        f"reference: {merchant_reference}"
+    )
+    
+    try:
+        # Process the payment status (same as IPN handler)
+        await process_pesapal_ipn(order_tracking_id, merchant_reference)
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "processed",
+                "message": "Payment status checked and processed",
+                "order_tracking_id": order_tracking_id,
+                "merchant_reference": merchant_reference
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error in manual payment status check: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "message": str(e)
+            }
+        )
+
+
 @app.get("/payment/callback")
 async def payment_callback(
     OrderTrackingId: str = Query(None, alias="OrderTrackingId"),

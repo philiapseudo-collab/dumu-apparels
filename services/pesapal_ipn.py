@@ -67,19 +67,34 @@ async def process_pesapal_ipn(
             logger.info(f"PesaPal status response for order {order_id}: {status_response}")
             
             # Extract payment status from response
-            # PesaPal API v3 might use different field names
+            # PesaPal API v3 might use different field names - check all possible locations
             payment_status = (
                 status_response.get("payment_status_description") or 
+                status_response.get("payment_status") or
                 status_response.get("status") or 
-                status_response.get("payment_status") or 
+                status_response.get("state") or
                 ""
-            ).upper()
-            payment_method = status_response.get("payment_method", "")
+            )
             
-            logger.info(f"Order {order_id} payment status: {payment_status}, method: {payment_method}")
+            # Also check nested structures
+            if not payment_status and isinstance(status_response.get("data"), dict):
+                data = status_response.get("data", {})
+                payment_status = (
+                    data.get("payment_status_description") or
+                    data.get("payment_status") or
+                    data.get("status") or
+                    ""
+                )
+            
+            payment_status = payment_status.upper() if payment_status else ""
+            payment_method = status_response.get("payment_method", "") or status_response.get("data", {}).get("payment_method", "")
+            
+            logger.info(f"Order {order_id} - Extracted payment status: '{payment_status}', method: '{payment_method}'")
+            logger.info(f"Order {order_id} - Full status response keys: {list(status_response.keys())}")
             
             # Update order based on payment status
-            if payment_status == "COMPLETED":
+            # Check for various completion status formats
+            if payment_status in ["COMPLETED", "COMPLETE", "SUCCESS", "SUCCESSFUL", "PAID"]:
                 order.status = "paid"
                 order.transaction_ref = order_tracking_id
                 await db.commit()
@@ -99,18 +114,26 @@ async def process_pesapal_ipn(
                         f"Thank you for shopping with Dumu Apparels!"
                     )
                     
-                    # Log confirmation
-                    confirmation_log = ConversationLog(
-                        user_id=user.id,
-                        message=confirmation_text,
-                        sender="bot"
-                    )
-                    db.add(confirmation_log)
-                    await db.commit()
-                    
-                    # Send confirmation to user
-                    await send_message(user.instagram_id, confirmation_text)
-                    logger.info(f"Payment confirmation sent to user {user.instagram_id} for order {order_id}")
+                    try:
+                        # Log confirmation
+                        confirmation_log = ConversationLog(
+                            user_id=user.id,
+                            message=confirmation_text,
+                            sender="bot"
+                        )
+                        db.add(confirmation_log)
+                        await db.commit()
+                        
+                        # Send confirmation to user
+                        message_sent = await send_message(user.instagram_id, confirmation_text)
+                        if message_sent:
+                            logger.info(f"✅ Payment confirmation sent successfully to user {user.instagram_id} (Instagram ID) for order {order_id}")
+                        else:
+                            logger.error(f"❌ Failed to send payment confirmation to user {user.instagram_id} for order {order_id}")
+                    except Exception as e:
+                        logger.error(f"Error sending payment confirmation message: {e}", exc_info=True)
+                else:
+                    logger.error(f"User not found for order {order_id} (user_id: {order.user_id})")
                 
             elif payment_status in ["FAILED", "CANCELLED", "REJECTED"]:
                 order.status = "failed"
@@ -145,7 +168,15 @@ async def process_pesapal_ipn(
                     logger.info(f"Payment failure notification sent to user {user.instagram_id} for order {order_id}")
             else:
                 # Status is PENDING or unknown - log but don't update
-                logger.info(f"Order {order_id} still pending (status: {payment_status})")
+                logger.warning(
+                    f"Order {order_id} has unexpected status: '{payment_status}'. "
+                    f"Full response: {status_response}. "
+                    f"Order will remain in pending status."
+                )
+                # Store the raw status in transaction_ref for debugging
+                if not order.transaction_ref:
+                    order.transaction_ref = f"Status: {payment_status}"
+                    await db.commit()
                 
         except Exception as e:
             logger.error(f"Error processing PesaPal IPN: {e}", exc_info=True)
