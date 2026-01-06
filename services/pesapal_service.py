@@ -12,6 +12,9 @@ from config import get_settings
 
 logger = logging.getLogger(__name__)
 
+# Cache for PesaPal IPN notification ID (to avoid re-registering on every request)
+_pesapal_ipn_id_cache: Optional[str] = None
+
 
 async def register_pesapal_ipn(ipn_url: str) -> Optional[str]:
     """
@@ -283,6 +286,7 @@ async def get_pesapal_payment_link(
     Returns:
         str: Payment URL if successful, None otherwise
     """
+    global _pesapal_ipn_id_cache
     settings = get_settings()
     description = f"Payment for {product_name}" if product_name else "Purchase from Dumu Apparels"
     
@@ -290,10 +294,23 @@ async def get_pesapal_payment_link(
     # Use BASE_URL if available, otherwise use a placeholder (PesaPal requires a valid URL format)
     if settings.base_url:
         callback_url = f"{settings.base_url.rstrip('/')}/payment/callback"
+        ipn_url = f"{settings.base_url.rstrip('/')}/pesapal/ipn"
     else:
         # Use a placeholder URL - PesaPal requires a valid URL format
         # In production, BASE_URL should be set to your actual domain
         callback_url = "https://dumuapparels.com/payment/callback"
+        ipn_url = "https://dumu-apparels-production.up.railway.app/pesapal/ipn"
+    
+    # Register IPN URL and get notification ID if not already cached
+    notification_id = _pesapal_ipn_id_cache
+    if not notification_id:
+        logger.info(f"Registering PesaPal IPN URL: {ipn_url}")
+        notification_id = await register_pesapal_ipn(ipn_url)
+        if notification_id:
+            _pesapal_ipn_id_cache = notification_id
+            logger.info(f"PesaPal IPN registered successfully with ID: {notification_id}")
+        else:
+            logger.warning("Failed to register PesaPal IPN URL, continuing without notification_id")
     
     result = await create_pesapal_order(
         amount=amount,
@@ -302,7 +319,8 @@ async def get_pesapal_payment_link(
         customer_name=customer_name,
         phone_number=phone_number,
         description=description,
-        callback_url=callback_url
+        callback_url=callback_url,
+        notification_id=notification_id
     )
     
     if result:
