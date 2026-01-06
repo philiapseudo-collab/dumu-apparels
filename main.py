@@ -341,6 +341,40 @@ async def pesapal_ipn(
     return PlainTextResponse(content=response_text, status_code=200)
 
 
+@app.get("/payment/callback")
+async def payment_callback(
+    OrderTrackingId: str = Query(None, alias="OrderTrackingId"),
+    OrderMerchantReference: str = Query(None, alias="OrderMerchantReference")
+):
+    """
+    Payment callback endpoint - redirects users back to Instagram after payment.
+    
+    PesaPal redirects users here after payment completion. We redirect them
+    back to Instagram's direct inbox.
+    
+    Args:
+        OrderTrackingId: PesaPal order tracking ID (optional)
+        OrderMerchantReference: Merchant reference (optional)
+        
+    Returns:
+        RedirectResponse: Redirects to Instagram
+    """
+    from fastapi.responses import RedirectResponse
+    
+    logger.info(
+        f"Payment callback received - OrderTrackingId: {OrderTrackingId}, "
+        f"OrderMerchantReference: {OrderMerchantReference}"
+    )
+    
+    # Redirect to Instagram's direct inbox
+    # This will open Instagram app if installed, or open Instagram web in browser
+    instagram_url = "https://www.instagram.com/direct/inbox/"
+    
+    # For mobile apps, use deep link (will open Instagram app if installed)
+    # The web URL will work for both web and mobile browsers
+    return RedirectResponse(url=instagram_url, status_code=302)
+
+
 if __name__ == "__main__":
     import uvicorn
     

@@ -64,9 +64,19 @@ async def process_pesapal_ipn(
                 logger.error(f"Failed to get payment status for order {order_id}")
                 return
             
+            logger.info(f"PesaPal status response for order {order_id}: {status_response}")
+            
             # Extract payment status from response
-            payment_status = status_response.get("payment_status_description", "").upper()
+            # PesaPal API v3 might use different field names
+            payment_status = (
+                status_response.get("payment_status_description") or 
+                status_response.get("status") or 
+                status_response.get("payment_status") or 
+                ""
+            ).upper()
             payment_method = status_response.get("payment_method", "")
+            
+            logger.info(f"Order {order_id} payment status: {payment_status}, method: {payment_method}")
             
             # Update order based on payment status
             if payment_status == "COMPLETED":

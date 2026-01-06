@@ -296,14 +296,13 @@ async def get_pesapal_payment_link(
     description = f"Payment for {product_name}" if product_name else "Purchase from Dumu Apparels"
     
     # PesaPal requires a callback URL. For Instagram bots, this is where users are redirected after payment.
-    # Use BASE_URL if available, otherwise use a placeholder (PesaPal requires a valid URL format)
+    # Use BASE_URL if available, otherwise use Railway domain
     if settings.base_url:
         callback_url = f"{settings.base_url.rstrip('/')}/payment/callback"
         ipn_url = f"{settings.base_url.rstrip('/')}/pesapal/ipn"
     else:
-        # Use a placeholder URL - PesaPal requires a valid URL format
-        # In production, BASE_URL should be set to your actual domain
-        callback_url = "https://dumuapparels.com/payment/callback"
+        # Default to Railway production domain
+        callback_url = "https://dumu-apparels-production.up.railway.app/payment/callback"
         ipn_url = "https://dumu-apparels-production.up.railway.app/pesapal/ipn"
     
     # Register IPN URL and get notification ID if not already cached
