@@ -364,8 +364,12 @@ async def payment_callback(
         f"OrderMerchantReference: {OrderMerchantReference}"
     )
     
-    # HTML page that attempts to open Instagram app, then falls back to web
-    html_content = """
+    # Get Instagram handle from settings
+    settings = get_settings()
+    instagram_handle = settings.instagram_handle
+    
+    # HTML page that attempts to open Instagram app to specific DM, then falls back to web
+    html_content = f"""
     <!DOCTYPE html>
     <html>
     <head>
@@ -373,7 +377,7 @@ async def payment_callback(
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Redirecting to Instagram...</title>
         <style>
-            body {
+            body {{
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
                 display: flex;
                 justify-content: center;
@@ -382,12 +386,12 @@ async def payment_callback(
                 margin: 0;
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 color: white;
-            }
-            .container {
+            }}
+            .container {{
                 text-align: center;
                 padding: 2rem;
-            }
-            .spinner {
+            }}
+            .spinner {{
                 border: 4px solid rgba(255, 255, 255, 0.3);
                 border-top: 4px solid white;
                 border-radius: 50%;
@@ -395,11 +399,11 @@ async def payment_callback(
                 height: 40px;
                 animation: spin 1s linear infinite;
                 margin: 0 auto 1rem;
-            }
-            @keyframes spin {
-                0% { transform: rotate(0deg); }
-                100% { transform: rotate(360deg); }
-            }
+            }}
+            @keyframes spin {{
+                0% {{ transform: rotate(0deg); }}
+                100% {{ transform: rotate(360deg); }}
+            }}
         </style>
     </head>
     <body>
@@ -409,17 +413,49 @@ async def payment_callback(
             <p>Redirecting you back to Instagram...</p>
         </div>
         <script>
-            // Try to open Instagram app first (mobile)
-            const instagramAppUrl = 'instagram://direct';
-            const instagramWebUrl = 'https://www.instagram.com/direct/inbox/';
+            // Try multiple Instagram deep link formats to open specific DM conversation
+            const instagramHandle = '{instagram_handle}';
             
-            // Attempt to open Instagram app
-            window.location.href = instagramAppUrl;
+            // Format 1: Try to open DM with specific user (most direct)
+            const instagramDMAppUrl = 'instagram://direct?username=' + instagramHandle;
             
-            // Fallback to web if app doesn't open (after 2 seconds)
-            setTimeout(function() {
-                window.location.href = instagramWebUrl;
-            }, 2000);
+            // Format 2: Open user profile (fallback, user can click Message)
+            const instagramProfileAppUrl = 'instagram://user?username=' + instagramHandle;
+            
+            // Web fallback: Open Instagram DM in browser
+            const instagramDMWebUrl = 'https://www.instagram.com/' + instagramHandle + '/';
+            const instagramInboxWebUrl = 'https://www.instagram.com/direct/inbox/';
+            
+            // Try opening DM conversation directly in app
+            let appOpened = false;
+            
+            // Create hidden iframe to test if app opens
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = instagramDMAppUrl;
+            document.body.appendChild(iframe);
+            
+            // Set timeout to detect if app didn't open
+            setTimeout(function() {{
+                // If we're still here after 1.5 seconds, app probably didn't open
+                // Try opening profile instead, then fall back to web
+                if (!appOpened) {{
+                    window.location.href = instagramProfileAppUrl;
+                    
+                    // Final fallback to web after another 2 seconds
+                    setTimeout(function() {{
+                        window.location.href = instagramDMWebUrl;
+                    }}, 2000);
+                }}
+            }}, 1500);
+            
+            // If page loses focus, app likely opened
+            window.addEventListener('blur', function() {{
+                appOpened = true;
+            }});
+            
+            // Also try direct navigation as backup
+            window.location.href = instagramDMAppUrl;
         </script>
     </body>
     </html>

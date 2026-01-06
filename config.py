@@ -92,6 +92,9 @@ class Settings(BaseSettings):
     
     # Base URL for IPN callbacks (optional - defaults to empty, set in PesaPal dashboard)
     base_url: Optional[str] = None
+    
+    # Instagram handle/username (for payment callback redirects)
+    instagram_handle: str = "dumuapparels"
 
 
 # Global settings instance
