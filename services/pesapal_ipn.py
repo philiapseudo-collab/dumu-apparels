@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from database import AsyncSessionLocal
-from models import Order, User, ConversationLog
+from models import Order, User, ConversationLog, Product
 from services.pesapal_service import get_pesapal_payment_status
 from services.chat_service import send_message
 
@@ -101,17 +101,30 @@ async def process_pesapal_ipn(
                 
                 logger.info(f"Order {order_id} marked as paid via PesaPal")
                 
-                # Get user and send confirmation message
+                # Get user, product, and send confirmation message
                 user_result = await db.execute(
                     select(User).where(User.id == order.user_id)
                 )
                 user = user_result.scalar_one_or_none()
                 
+                # Get product details for confirmation message
+                product_result = await db.execute(
+                    select(Product).where(Product.id == order.product_id)
+                )
+                product = product_result.scalar_one_or_none()
+                
                 if user:
+                    # Build confirmation message with order and product details
+                    product_name = product.name if product else "your item"
+                    amount_str = f"KES {float(order.amount):,.2f}"
+                    
                     confirmation_text = (
-                        f"✅ Payment successful! 🎉\n\n"
-                        f"Your order #{order.id} has been confirmed.\n\n"
-                        f"Thank you for shopping with Dumu Apparels!"
+                        f"✅ Payment Successful! 🎉\n\n"
+                        f"Your payment of {amount_str} for {product_name} has been confirmed.\n\n"
+                        f"Order Number: #{order.id}\n"
+                        f"Transaction ID: {order_tracking_id}\n\n"
+                        f"Thank you for shopping with Dumu Apparels! We'll process your order and keep you updated.\n\n"
+                        f"Need help? Just send us a message! 💬"
                     )
                     
                     try:
@@ -124,7 +137,7 @@ async def process_pesapal_ipn(
                         db.add(confirmation_log)
                         await db.commit()
                         
-                        # Send confirmation to user
+                        # Send confirmation to user via Instagram bot account
                         message_sent = await send_message(user.instagram_id, confirmation_text)
                         if message_sent:
                             logger.info(f"✅ Payment confirmation sent successfully to user {user.instagram_id} (Instagram ID) for order {order_id}")
