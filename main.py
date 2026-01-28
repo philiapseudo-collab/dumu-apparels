@@ -204,6 +204,47 @@ async def receive_webhook(
     return {"status": "received"}
 
 
+@app.post("/kopokopo/callback")
+async def kopokopo_callback(payload: dict = Body(...)):
+    """
+    Kopo Kopo v1 callback endpoint for incoming payments (STK Push).
+
+    Current behavior (as requested):
+    - Log the full payload
+    - Log success/failure using data.attributes.status
+    - Future: update order status based on the callback
+    """
+    logger.info("KopoKopo callback received: %s", payload)
+
+    try:
+        data = payload.get("data", {}) if isinstance(payload, dict) else {}
+        attributes = data.get("attributes", {}) if isinstance(data, dict) else {}
+        status = attributes.get("status")
+
+        if status == "Success":
+            resource = (
+                attributes.get("event", {})
+                .get("resource", {})
+                if isinstance(attributes.get("event"), dict)
+                else None
+            )
+            logger.info("KopoKopo payment SUCCESS: %s", resource)
+        elif status == "Failed":
+            errors = (
+                attributes.get("event", {})
+                .get("errors")
+                if isinstance(attributes.get("event"), dict)
+                else None
+            )
+            logger.info("KopoKopo payment FAILED: %s", errors)
+        else:
+            logger.info("KopoKopo payment status (unhandled): %s", status)
+    except Exception as e:
+        logger.error("Error parsing KopoKopo callback payload: %s", e, exc_info=True)
+
+    return {"status": "received"}
+
+
 @app.get("/privacy-policy", response_class=HTMLResponse)
 async def privacy_policy():
     """Privacy Policy page for Meta app requirements."""

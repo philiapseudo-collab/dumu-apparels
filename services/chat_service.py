@@ -7,6 +7,7 @@ using the Instagram Graph API.
 
 import httpx
 import logging
+import re
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -15,8 +16,22 @@ from config import get_settings
 from database import AsyncSessionLocal
 from models import User, ConversationLog, Product, Order
 from services.pesapal_service import get_pesapal_payment_link
+from services.kopokopo_service import KopoKopoService
 
 logger = logging.getLogger(__name__)
+
+KENYAN_MSISDN_LOCAL_RE = re.compile(r"^(07|01)\d{8}$")
+
+
+def normalize_kenyan_phone_to_e164(local_msisdn: str) -> str:
+    """
+    Convert Kenyan local numbers like 0712345678 / 0112345678 to E.164.
+    Example: 0712345678 -> +254712345678
+    """
+    msisdn = (local_msisdn or "").strip()
+    if not KENYAN_MSISDN_LOCAL_RE.match(msisdn):
+        raise ValueError("Invalid Kenyan phone number format")
+    return f"+254{msisdn[1:]}"
 
 
 async def send_message(recipient_id: str, text: str) -> bool:
@@ -696,9 +711,55 @@ async def process_webhook_event(payload: dict) -> None:
                                 )
                                 db.add(payment_log)
                                 await db.commit()
-                                
-                                # Send placeholder response (IntaSend integration in Phase 7)
-                                response_text = "Initiating M-Pesa secure checkout via IntaSend... ⏳"
+
+                                # Persist pending intent on the user so it survives restarts.
+                                user.pending_product_id = product_id
+                                await db.commit()
+
+                                # If we don't have the user's phone number yet, ask for it.
+                                if not user.phone_number:
+                                    response_text = "Please reply with your M-Pesa number (e.g., 0712345678) to complete the payment."
+                                    response_log = ConversationLog(
+                                        user_id=user.id,
+                                        message=response_text,
+                                        sender="bot"
+                                    )
+                                    db.add(response_log)
+                                    await db.commit()
+
+                                    await send_message(sender_id, response_text)
+                                    logger.info(f"Requested M-Pesa phone number from user {sender_id}")
+                                    continue
+
+                                # Normalize stored phone number to E.164 for Kopo Kopo.
+                                try:
+                                    e164_phone = normalize_kenyan_phone_to_e164(user.phone_number)
+                                except Exception:
+                                    # Stored number is invalid; ask again.
+                                    user.phone_number = None
+                                    await db.commit()
+                                    response_text = "Please reply with your M-Pesa number (e.g., 0712345678) to complete the payment."
+                                    await send_message(sender_id, response_text)
+                                    continue
+
+                                customer_email = f"instagram_{sender_id}@dumuapparels.local"
+                                full_name = (user.name or "Instagram Customer").strip()
+                                parts = [p for p in full_name.split(" ") if p]
+                                first_name = parts[0] if parts else "Instagram"
+                                last_name = " ".join(parts[1:]) if len(parts) > 1 else "Customer"
+                                reference = f"IG_{sender_id}_PRODUCT_{product_id}"
+
+                                kopokopo = KopoKopoService()
+                                await kopokopo.initiate_stk_push(
+                                    phone_number=e164_phone,
+                                    amount=float(product.price),
+                                    first_name=first_name,
+                                    last_name=last_name,
+                                    email=customer_email,
+                                    reference=reference,
+                                )
+
+                                response_text = "I have sent a prompt to your phone! Please enter your PIN."
                                 response_log = ConversationLog(
                                     user_id=user.id,
                                     message=response_text,
@@ -706,12 +767,9 @@ async def process_webhook_event(payload: dict) -> None:
                                 )
                                 db.add(response_log)
                                 await db.commit()
-                                
-                                success = await send_message(sender_id, response_text)
-                                if success:
-                                    logger.info(f"M-Pesa checkout initiated for user {sender_id}, product {product_id}")
-                                else:
-                                    logger.error(f"Failed to send M-Pesa checkout message to {sender_id}")
+
+                                await send_message(sender_id, response_text)
+                                logger.info(f"KopoKopo STK push initiated for user {sender_id}, product {product_id}")
                                     
                             except ValueError:
                                 logger.error(f"Invalid product ID in payload: {payload}")
@@ -913,6 +971,58 @@ async def process_webhook_event(payload: dict) -> None:
                     
                     # Response Rules (Hybrid Logic)
                     text_lower = text.lower().strip()
+
+                    # Handle phone number input for M-Pesa (Kopo Kopo STK Push)
+                    if KENYAN_MSISDN_LOCAL_RE.match(text_lower):
+                        try:
+                            e164_phone = normalize_kenyan_phone_to_e164(text_lower)
+                        except Exception:
+                            await send_message(sender_id, "Please send a valid M-Pesa number like 0712345678.")
+                            continue
+
+                        # Store local format (friendly) and keep it consistent with existing DB column size
+                        user.phone_number = text_lower
+                        await db.commit()
+
+                        if user.pending_product_id:
+                            product_result = await db.execute(
+                                select(Product).where(Product.id == user.pending_product_id)
+                            )
+                            product = product_result.scalar_one_or_none()
+
+                            if not product or not product.is_active:
+                                user.pending_product_id = None
+                                await db.commit()
+                                await send_message(sender_id, "Sorry, that item is no longer available. Please choose another item.")
+                                continue
+
+                            customer_email = f"instagram_{sender_id}@dumuapparels.local"
+                            full_name = (user.name or "Instagram Customer").strip()
+                            parts = [p for p in full_name.split(" ") if p]
+                            first_name = parts[0] if parts else "Instagram"
+                            last_name = " ".join(parts[1:]) if len(parts) > 1 else "Customer"
+                            reference = f"IG_{sender_id}_PRODUCT_{user.pending_product_id}"
+
+                            kopokopo = KopoKopoService()
+                            await kopokopo.initiate_stk_push(
+                                phone_number=e164_phone,
+                                amount=float(product.price),
+                                first_name=first_name,
+                                last_name=last_name,
+                                email=customer_email,
+                                reference=reference,
+                            )
+
+                            # Clear pending intent after initiating STK push
+                            user.pending_product_id = None
+                            await db.commit()
+
+                            await send_message(sender_id, "I have sent a prompt to your phone! Please enter your PIN.")
+                            logger.info(f"KopoKopo STK push initiated after phone capture for user {sender_id}")
+                            continue
+
+                        await send_message(sender_id, "Thanks! Your M-Pesa number has been saved. Tap M-Pesa again to pay.")
+                        continue
                     
                     if text_lower in ["hi", "hello", "start"]:
                         # Send welcome menu

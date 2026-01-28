@@ -49,6 +49,11 @@ class User(Base):
     name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     phone_number: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     location: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    pending_product_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Last product user selected for M-Pesa; used to resume STK flow"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

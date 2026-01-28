@@ -92,9 +92,33 @@ class Settings(BaseSettings):
     
     # Base URL for IPN callbacks (optional - defaults to empty, set in PesaPal dashboard)
     base_url: Optional[str] = None
+
+    # Public URL of THIS app (used for payment callbacks)
+    # Example: https://your-railway-domain.up.railway.app
+    app_url: str
     
     # Instagram handle/username (for payment callback redirects)
     instagram_handle: str = "dumuapparels"
+
+    # Payment Providers - KoPokoPo (K2) STK Push (Primary)
+    kopokopo_client_id: str
+    kopokopo_client_secret: str
+    kopokopo_api_key: str
+    kopokopo_base_url: str = "https://sandbox.kopokopo.com"
+    kopokopo_till_number: str
+
+    @field_validator("kopokopo_till_number")
+    @classmethod
+    def validate_kopokopo_till_number(cls, v: str) -> str:
+        """
+        Kopo Kopo v1 requires till numbers to start with 'K'.
+        Fail fast at startup to avoid silent payment failures.
+        """
+        if not v:
+            raise ValueError("KOPOKOPO_TILL_NUMBER is required")
+        if not v.startswith("K"):
+            raise ValueError("KOPOKOPO_TILL_NUMBER must start with 'K'")
+        return v
 
 
 # Global settings instance
