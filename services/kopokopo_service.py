@@ -152,5 +152,14 @@ class KopoKopoService:
         )
 
         resp.raise_for_status()
-        return resp.json()
+        # Kopo Kopo commonly returns 201 Created with an empty body and a Location header.
+        # Example: Location: https://sandbox.kopokopo.com/api/v1/incoming_payments/<id>
+        if not resp.content or not resp.text.strip():
+            return {"location": resp.headers.get("Location")}
+
+        try:
+            return resp.json()
+        except Exception:
+            # Fall back to raw text if the response isn't JSON.
+            return {"raw": resp.text, "location": resp.headers.get("Location")}
 
