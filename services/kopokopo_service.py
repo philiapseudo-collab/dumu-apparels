@@ -115,17 +115,30 @@ class KopoKopoService:
             "Content-Type": "application/json",
         }
 
+        # Kopo Kopo v1 STK Push payload (per docs):
+        # - payment_channel: "M-PESA STK Push"
+        # - subscriber: {first_name,last_name,phone_number,email}
+        # - amount: {currency,value}
+        # - callback URL lives under _links.callback_url
         body = {
-            "payment_channel": "M-PESA",
+            "payment_channel": "M-PESA STK Push",
             "till_number": settings.kopokopo_till_number,
-            "first_name": first_name,
-            "last_name": last_name,
-            "phone_number": phone_number,
-            "amount": amount,
-            "currency": "KES",
-            "email": email,
-            "callback_url": f"{settings.app_url.rstrip('/')}/kopokopo/callback",
-            "metadata": {"reference": reference},
+            "subscriber": {
+                "first_name": first_name,
+                "last_name": last_name,
+                "phone_number": phone_number,
+                "email": email,
+            },
+            "amount": {
+                "currency": "KES",
+                "value": float(amount),
+            },
+            "metadata": {
+                "reference": reference,
+            },
+            "_links": {
+                "callback_url": f"{settings.app_url.rstrip('/')}/kopokopo/callback",
+            },
         }
 
         async with httpx.AsyncClient(timeout=30.0) as client:
